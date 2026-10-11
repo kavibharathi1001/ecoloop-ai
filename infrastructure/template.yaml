@@ -11,7 +11,11 @@ Globals:
     MemorySize: 256
     Architectures:
       - x86_64
-
+Parameters:
+  GroqApiKey:
+    Type: String
+    NoEcho: true
+    Description: Groq API key for EcoLoop AI
 Resources:
   EcoLoopApi:
     Type: AWS::Serverless::HttpApi
@@ -66,6 +70,8 @@ Resources:
 
       Environment:
         Variables:
+          GROQ_API_KEY: !Ref GroqApiKey
+          GROQ_MODEL: "openai/gpt-oss-20b"
           ALLOWED_ORIGIN: "*"
           ACTIONS_TABLE: !Ref EcoLoopActionsTable
           DYNAMODB_ENDPOINT: ""
@@ -92,6 +98,7 @@ Resources:
             ApiId: !Ref EcoLoopApi
             Path: /
             Method: ANY
+        
 
 Outputs:
   EcoLoopApiUrl:

@@ -345,8 +345,8 @@ function ScanWaste() {
   }
 
   async function analyzeItem() {
-    if (!item.trim()) {
-      setMessage("Describe the waste item before requesting recommendations.");
+    if (!file && !item.trim()) {
+      setMessage("Upload a waste photo or describe the item before analyzing.");
       return;
     }
 
@@ -355,22 +355,62 @@ function ScanWaste() {
     setResult(null);
 
     try {
-      const response = await ecoLoopApi.analyze(item.trim(), material as
-        | "plastic"
-        | "paper"
-        | "glass"
-        | "metal"
-        | "organic"
-        | "electronic"
-        | "textile"
-        | "unknown");
+      let response: Record<string, unknown>;
+
+      if (file) {
+        // Read the selected image and convert it to a Base64 data string.
+        const imageData = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+
+          reader.onload = () => {
+            if (typeof reader.result !== "string") {
+              reject(new Error("Unable to read the selected image."));
+              return;
+            }
+
+            const commaIndex = reader.result.indexOf(",");
+
+            if (commaIndex === -1) {
+              reject(new Error("The selected image has an invalid format."));
+              return;
+            }
+
+            resolve(reader.result.slice(commaIndex + 1));
+          };
+
+          reader.onerror = () => {
+            reject(new Error("Unable to read the selected image."));
+          };
+
+          reader.readAsDataURL(file);
+        });
+
+        response = await ecoLoopApi.analyzeImage(
+          imageData,
+          file.type,
+          item.trim(),
+        );
+      } else {
+        response = await ecoLoopApi.analyze(
+          item.trim(),
+          material as
+            | "plastic"
+            | "paper"
+            | "glass"
+            | "metal"
+            | "organic"
+            | "electronic"
+            | "textile"
+            | "unknown",
+        );
+      }
 
       setResult(response);
     } catch (err) {
       setMessage(
         err instanceof Error
           ? err.message
-          : "Unable to analyze this item.",
+          : "Unable to analyze this item. Please try again.",
       );
     } finally {
       setLoading(false);
@@ -386,8 +426,8 @@ function ScanWaste() {
       <h1>Give your waste a second chance.</h1>
 
       <p className="page-description">
-        Add a photo if you have one, describe the item, and
-        receive rules-based recommendations from EcoLoop AI.
+        Upload a waste photo for AI-powered visual recognition, or describe
+        the item to receive personalized reuse, recycling, and safety guidance.
       </p>
 
       <div className="panel upload-panel">
@@ -458,11 +498,15 @@ function ScanWaste() {
 
         <button
           className="primary-button full-button"
-          disabled={loading || !item.trim()}
+          disabled={loading || (!item.trim() && !file)}
           onClick={() => void analyzeItem()}
         >
           <Sparkles size={17} />
-          {loading ? "Preparing recommendations..." : "Analyze waste item"}
+            {loading
+              ? "Analyzing waste with AI..."
+              : file
+                ? "Identify waste from photo"
+                : "Analyze waste item"}
         </button>
       </div>
 
@@ -485,9 +529,8 @@ function ScanWaste() {
           </pre>
 
           <p>
-            These recommendations are rules-based. The uploaded
-            image is not analyzed by a computer-vision model.
-            Verify local recycling rules before disposal.
+            AI-generated recommendations are estimates. Verify material
+            identification and local recycling rules before disposal.
           </p>
         </section>
       )}

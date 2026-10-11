@@ -77,6 +77,17 @@ export const ecoLoopApi = {
       ...(material ? { material } : {}),
     }),
 
+  analyzeImage: (
+    image: string,
+    mimeType: string,
+    description = "",
+  ) =>
+    post<ApiResponse>("/api/analyze-image", {
+      image,
+      mimeType,
+      description,
+    }),
+
   chat: (message: string) =>
     post<ApiResponse>("/api/chat", { message }),
 

@@ -7,10 +7,64 @@ from decimal import Decimal
 
 import boto3
 from boto3.dynamodb.conditions import Key
-
+from groq import Groq
+import base64
+import binascii
 
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
+# --------------------------------------------------
+# GROQ AI CONFIGURATION
+# --------------------------------------------------
 
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+GROQ_VISION_MODEL = os.environ.get(
+    "GROQ_VISION_MODEL",
+    "qwen/qwen3.8-27b",
+)
+
+groq_client = (
+    Groq(
+        api_key=GROQ_API_KEY,
+        timeout=15.0,
+        max_retries=0,
+    )
+    if GROQ_API_KEY
+    else None
+)
+
+
+def generate_ai_response(
+    system_prompt: str,
+    user_prompt: str,
+    max_tokens: int = 700,
+) -> str:
+    """Generate a response using the configured Groq model."""
+
+    if groq_client is None:
+        raise RuntimeError("Groq API is not configured.")
+
+    completion = groq_client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": user_prompt,
+            },
+        ],
+        temperature=0.4,
+        max_completion_tokens=max_tokens,
+    )
+
+    answer = completion.choices[0].message.content
+
+    if not answer or not answer.strip():
+        raise RuntimeError("The AI model returned an empty response.")
+
+    return answer.strip()
 
 # --------------------------------------------------
 # HTTP RESPONSE
@@ -236,6 +290,8 @@ def classify_material(item: str, supplied_material: str = "") -> str:
 
 
 def analyze_waste(payload: dict) -> dict:
+    """Analyze a waste description using a live Groq model."""
+
     item = payload.get("item", "")
     supplied_material = payload.get("material", "")
 
@@ -248,97 +304,350 @@ def analyze_waste(payload: dict) -> dict:
     if not item and not supplied_material:
         raise ValueError("Provide an 'item' or 'material'.")
 
-    category = classify_material(item, supplied_material)
+    system_prompt = """
+You are EcoLoop AI, an expert in waste classification and circular
+economy guidance.
 
-    if category == "unknown":
+Analyze the waste item described by the user. Return ONLY valid JSON
+with this structure:
+
+{
+  "identified_material": "material name",
+  "item": "normalized item description",
+  "message": "brief explanation",
+  "recommendations": {
+    "reuse": ["practical suggestion"],
+    "recycle": ["practical suggestion"],
+    "upcycle": ["practical suggestion"]
+  },
+  "safety": ["important precautions"],
+  "requires_local_verification": true
+}
+
+Rules:
+- Do not claim to have inspected a photograph.
+- Only use information in the supplied item description and material.
+- If the material is uncertain, say so instead of guessing.
+- Give practical, safe, environmentally responsible suggestions.
+- Never recommend burning plastic or household waste.
+- Never recommend dismantling batteries or hazardous electronics.
+- Explain that local recycling acceptance must be verified.
+- Do not invent recycling facilities, prices, or carbon savings.
+- Keep lists concise.
+- Return valid JSON without Markdown fences.
+"""
+
+    user_prompt = (
+        f"Item description: {item or 'Not provided'}\n"
+        f"User-supplied material: {supplied_material or 'Not provided'}"
+    )
+
+    try:
+        raw_answer = generate_ai_response(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=600,
+        )
+
+        # Parse the response instead of trusting arbitrary model output.
+        result = json.loads(raw_answer)
+
+        required_fields = {
+            "identified_material",
+            "item",
+            "message",
+            "recommendations",
+            "safety",
+            "requires_local_verification",
+        }
+
+        if not isinstance(result, dict) or not required_fields.issubset(result):
+            raise ValueError("Invalid AI response structure.")
+
+        recommendations = result["recommendations"]
+
+        if not isinstance(recommendations, dict):
+            raise ValueError("Invalid recommendations.")
+
+        for category in ("reuse", "recycle", "upcycle"):
+            values = recommendations.get(category)
+
+            if (
+                not isinstance(values, list)
+                or not all(isinstance(value, str) for value in values)
+            ):
+                raise ValueError("Invalid recommendation list.")
+
+        if not isinstance(result["safety"], list) or not all(
+            isinstance(value, str) for value in result["safety"]
+        ):
+            raise ValueError("Invalid safety list.")
+
         return {
             "success": True,
-            "analysis_type": "rules_based",
-            "identified_material": "Unknown",
-            "item": item,
+            "analysis_type": "groq_llm",
+            "identified_material": str(result["identified_material"])[:80],
+            "item": str(result["item"])[:120],
             "confidence": None,
-            "message": (
-                "The material could not be determined from the supplied text. "
-                "Please provide more details or consult a local waste service."
-            ),
-            "recommendations": [],
+            "message": str(result["message"])[:500],
+            "recommendations": {
+                category: values[:5]
+                for category, values in recommendations.items()
+                if category in ("reuse", "recycle", "upcycle")
+            },
+            "safety": result["safety"][:8],
             "requires_local_verification": True,
         }
 
-    guide = WASTE_GUIDES[category]
+    except Exception:
+        # Do not silently label rule-based output as live AI.
+        return {
+            "success": False,
+            "analysis_type": "groq_llm",
+            "error": "AI analysis unavailable",
+            "message": (
+                "AI analysis is temporarily unavailable. "
+                "Please retry later."
+            ),
+        }
+
+def analyze_waste_image(payload: dict) -> dict:
+    """Analyze an uploaded waste photograph using Groq vision."""
+
+    image_data = payload.get("image")
+    mime_type = payload.get("mimeType", "image/jpeg")
+    description = payload.get("description", "")
+
+    allowed_types = {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    }
+
+    if not isinstance(image_data, str) or not image_data:
+        raise ValueError("An image is required.")
+
+    if mime_type not in allowed_types:
+        raise ValueError(
+            "Supported image types are JPEG, PNG and WebP."
+        )
+
+    if not isinstance(description, str):
+        raise ValueError("Description must be text.")
+
+    # Accept a plain base64 string or a data URL.
+    if image_data.startswith("data:"):
+        header, separator, image_data = image_data.partition(",")
+
+        if not separator or not header.endswith(";base64"):
+            raise ValueError("Invalid image data URL.")
+
+        declared_type = header[5:].split(";")[0]
+
+        if declared_type != mime_type:
+            raise ValueError("Image MIME type does not match.")
+
+    # Reject oversized encoded requests before decoding.
+    if len(image_data) > 4_200_000:
+        raise ValueError(
+            "Image is too large. Upload an image under 3 MB."
+        )
+
+    try:
+        image_bytes = base64.b64decode(
+            image_data,
+            validate=True,
+        )
+    except (binascii.Error, ValueError):
+        raise ValueError("The image is not valid base64 data.")
+
+    if not image_bytes:
+        raise ValueError("The uploaded image is empty.")
+
+    if len(image_bytes) > 3 * 1024 * 1024:
+        raise ValueError("Image must be smaller than 3 MB.")
+
+    # Verify the file signature rather than trusting the MIME type.
+    signatures = {
+        "image/jpeg": lambda b: b.startswith(b"\xff\xd8\xff"),
+        "image/png": lambda b: b.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/webp": lambda b: (
+            len(b) >= 12
+            and b.startswith(b"RIFF")
+            and b[8:12] == b"WEBP"
+        ),
+    }
+
+    if not signatures[mime_type](image_bytes):
+        raise ValueError(
+            "The image contents do not match the declared file type."
+        )
+
+    if groq_client is None:
+        raise RuntimeError("Groq API is not configured.")
+
+    prompt = f"""
+You are EcoLoop AI, an environmental waste identification assistant.
+
+Examine the actual uploaded photograph and identify the visible waste.
+
+Return ONLY a valid JSON object with this structure:
+
+{{
+  "item": "short description of the visible item",
+  "identified_material": "plastic, paper, glass, metal, organic, electronic, textile, or unknown",
+  "confidence": "high, medium, or low",
+  "observations": ["visible characteristics"],
+  "recommendations": {{
+    "reuse": ["practical reuse suggestions"],
+    "recycle": ["safe recycling suggestions"],
+    "upcycle": ["creative upcycling suggestions"]
+  }},
+  "safety": ["relevant precautions"],
+  "requires_local_verification": true
+}}
+
+Rules:
+- Base your answer on the photograph, not an assumed item.
+- If the image is unclear, say so and use low confidence.
+- Do not claim certainty about material composition when it cannot
+  be determined visually.
+- Do not invent recycling centres, prices, or carbon savings.
+- Never recommend burning waste or unsafe handling of batteries.
+- Explain that local recycling acceptance must be verified.
+- Keep recommendations concise.
+- User's optional description: {description[:300]}
+"""
+
+    completion = groq_client.chat.completions.create(
+        model=GROQ_VISION_MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt,
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": (
+                                f"data:{mime_type};base64,{image_data}"
+                            ),
+                        },
+                    },
+                ],
+            }
+        ],
+        temperature=0.2,
+        max_completion_tokens=1000,
+        response_format={"type": "json_object"},
+    )
+
+    answer = completion.choices[0].message.content
+
+    if not answer:
+        raise RuntimeError("The vision model returned no result.")
+
+    result = json.loads(answer)
+
+    if not isinstance(result, dict):
+        raise ValueError("Invalid vision response.")
+
+    recommendations = result.get("recommendations")
+
+    if not isinstance(recommendations, dict):
+        raise ValueError("Missing recommendations.")
+
+    for category in ("reuse", "recycle", "upcycle"):
+        if not isinstance(recommendations.get(category), list):
+            raise ValueError("Invalid recommendation structure.")
+
+    if not isinstance(result.get("safety"), list):
+        raise ValueError("Invalid safety information.")
 
     return {
         "success": True,
-        "analysis_type": "rules_based",
-        "identified_material": guide["label"],
-        "item": item or guide["label"],
-        "confidence": None,
+        "analysis_type": "groq_vision",
+        "model": GROQ_VISION_MODEL,
+        "item": str(result.get("item", "Unknown item"))[:200],
+        "identified_material": str(
+            result.get("identified_material", "unknown")
+        )[:40],
+        "confidence": result.get("confidence", "low"),
+        "observations": [
+            str(x)[:300] for x in result.get("observations", [])[:5]
+        ],
         "recommendations": {
-            "reuse": guide["reuse"],
-            "recycle": guide["recycle"],
-            "upcycle": guide["upcycle"],
+            category: [
+                str(x)[:300] for x in recommendations[category][:5]
+            ]
+            for category in ("reuse", "recycle", "upcycle")
         },
-        "safety": guide["safety"],
-        "message": (
-            "These recommendations are general guidance. "
-            "Verify acceptance with your local waste collection service."
-        ),
+        "safety": [
+            str(x)[:300] for x in result["safety"][:8]
+        ],
         "requires_local_verification": True,
     }
-
-
 # --------------------------------------------------
 # BASIC WASTE-MANAGEMENT CHAT
 # --------------------------------------------------
 
 def answer_chat(message: str) -> dict:
-    text = message.lower()
+    """Answer environmental questions using a live Groq model."""
 
-    if any(word in text for word in ["plastic", "bottle", "wrapper"]):
-        answer = (
-            "For plastic, first check whether the item can be safely reused. "
-            "If not, empty and rinse it, then check your local recycling rules. "
-            "Never burn plastic."
-        )
-    elif any(word in text for word in ["compost", "food waste", "banana peel"]):
-        answer = (
-            "Suitable fruit and vegetable scraps can often be composted. "
-            "Separate them from dry recyclables and manage the compost "
-            "to discourage pests."
-        )
-    elif any(word in text for word in ["battery", "electronic", "e-waste", "ewaste"]):
-        answer = (
-            "Keep batteries and electronic waste out of ordinary household "
-            "recycling. Use an authorized collection channel and do not "
-            "dismantle damaged batteries."
-        )
-    elif any(word in text for word in ["earn", "money", "sell", "income"]):
-        answer = (
-            "Some recyclers pay for specific materials, depending on quality, "
-            "quantity, and location. Contact local authorized scrap dealers "
-            "or recycling centers to verify accepted materials and prices."
-        )
-    elif any(word in text for word in ["energy", "biogas", "waste-to-energy"]):
-        answer = (
-            "Some organic waste can support controlled anaerobic digestion "
-            "to produce biogas. Suitable waste-to-energy processes depend "
-            "on the material, equipment, emissions controls, and local rules. "
-            "Do not burn household waste."
-        )
-    else:
-        answer = (
-            "Start by separating waste into reusable items, dry recyclables, "
-            "organic waste, and hazardous or electronic waste. Follow local "
-            "collection rules, and prioritize reduction and reuse."
+    system_prompt = """
+You are EcoLoop Guide, an expert AI assistant for waste reduction,
+recycling, reuse, upcycling, composting, circular economy, and
+responsible waste-to-energy practices.
+
+Your goals:
+1. Give practical, clear and environmentally responsible guidance.
+2. Explain how users can reduce waste before recycling it.
+3. Suggest reuse, recycling and upcycling options where appropriate.
+4. Explain safe ways to separate waste.
+5. Never recommend burning plastic or household waste.
+6. Never recommend dismantling damaged batteries or unsafe electronics.
+7. Do not invent local recycling facilities, collection schedules,
+   recycling prices, or environmental impact measurements.
+8. Explain when advice depends on local rules.
+9. Use simple language and numbered steps when useful.
+10. If asked about earning money from waste, explain that prices and
+    acceptance depend on local recyclers and must be verified.
+11. Be honest about uncertainty and environmental claims.
+12. Keep the response helpful and reasonably concise.
+
+You are a sustainability guide, not a substitute for local
+environmental regulations or professional hazardous-waste advice.
+"""
+
+    try:
+        answer = generate_ai_response(
+            system_prompt=system_prompt,
+            user_prompt=message,
+            max_tokens=700,
         )
 
-    return {
-        "success": True,
-        "assistant": "EcoLoop Guide",
-        "answer": answer,
-        "analysis_type": "rules_based",
-        "message": "This response uses predefined guidance, not a live AI model.",
-    }
+        return {
+            "success": True,
+            "assistant": "EcoLoop AI",
+            "answer": answer,
+            "analysis_type": "groq_llm",
+            "model": GROQ_MODEL,
+        }
+
+    except Exception:
+        # Do not expose API keys, provider errors or internal details.
+        return {
+            "success": False,
+            "assistant": "EcoLoop AI",
+            "error": "AI temporarily unavailable",
+            "message": (
+                "The AI assistant could not respond right now. "
+                "Please try again shortly."
+            ),
+        }
 # --------------------------------------------------
 # ACTION TRACKING AND IMPACT
 # --------------------------------------------------
@@ -526,6 +835,31 @@ def lambda_handler(event, context):
         if method == "POST" and path == "/api/analyze":
             payload = parse_body(event)
             return response(200, analyze_waste(payload))
+
+        if method == "POST" and path == "/api/analyze-image":
+            payload = parse_body(event)
+
+            try:
+                result = analyze_waste_image(payload)
+                return response(200, result)
+            except ValueError as exc:
+                return response(
+                    400,
+                    {
+                        "success": False,
+                        "error": str(exc),
+                    },
+                )
+            except Exception:
+                # Do not expose API keys or provider internals.
+                return response(
+                    502,
+                    {
+                        "success": False,
+                        "error": "Image analysis is temporarily unavailable.",
+                    },
+                )
+
 
         if method == "POST" and path == "/api/chat":
             payload = parse_body(event)
