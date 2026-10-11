@@ -10,6 +10,7 @@ from boto3.dynamodb.conditions import Key
 from groq import Groq
 import base64
 import binascii
+import logging
 
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
 # --------------------------------------------------
@@ -17,6 +18,12 @@ ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
 # --------------------------------------------------
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+
+GROQ_MODEL = os.environ.get(
+    "GROQ_MODEL",
+    "openai/gpt-oss-20b",
+)
+
 GROQ_VISION_MODEL = os.environ.get(
     "GROQ_VISION_MODEL",
     "qwen/qwen3.8-27b",
@@ -38,33 +45,68 @@ def generate_ai_response(
     user_prompt: str,
     max_tokens: int = 700,
 ) -> str:
-    """Generate a response using the configured Groq model."""
+    """Generate a response using Groq with safe response validation."""
 
     if groq_client is None:
         raise RuntimeError("Groq API is not configured.")
 
     completion = groq_client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-            {
-                "role": "user",
-                "content": user_prompt,
-            },
-        ],
-        temperature=0.4,
-        max_completion_tokens=max_tokens,
+    model=GROQ_MODEL,
+    messages=[
+        {
+            "role": "system",
+            "content": (
+                system_prompt
+                + "\n\nGive the final answer directly. "
+                  "Keep internal reasoning brief. "
+                  "Do not output internal reasoning. "
+                  "Return a concise, useful response."
+            ),
+        },
+        {
+            "role": "user",
+            "content": user_prompt,
+        },
+    ],
+    temperature=0.4,
+    max_completion_tokens=max(max_tokens, 1500),
+)
+
+    if not completion.choices:
+        logging.error(
+            "Groq returned no choices. Model=%s, usage=%s",
+            GROQ_MODEL,
+            getattr(completion, "usage", None),
+        )
+        raise RuntimeError("The AI model returned no choices.")
+
+    choice = completion.choices[0]
+    message = choice.message
+    answer = message.content
+
+    if isinstance(answer, str) and answer.strip():
+        return answer.strip()
+
+    # Capture diagnostic metadata without logging prompts or secrets.
+    refusal = getattr(message, "refusal", None)
+    finish_reason = getattr(choice, "finish_reason", None)
+
+    logging.warning(
+        "Groq returned no usable text. Model=%s, finish_reason=%s, "
+        "refusal_present=%s, usage=%s",
+        GROQ_MODEL,
+        finish_reason,
+        bool(refusal),
+        getattr(completion, "usage", None),
     )
 
-    answer = completion.choices[0].message.content
+    if refusal:
+        raise RuntimeError("The AI model declined the request.")
 
-    if not answer or not answer.strip():
-        raise RuntimeError("The AI model returned an empty response.")
-
-    return answer.strip()
+    raise RuntimeError(
+        "The AI model returned no usable text "
+        f"(finish_reason={finish_reason})."
+    )
 
 # --------------------------------------------------
 # HTTP RESPONSE
@@ -290,7 +332,7 @@ def classify_material(item: str, supplied_material: str = "") -> str:
 
 
 def analyze_waste(payload: dict) -> dict:
-    """Analyze a waste description using a live Groq model."""
+    """Analyze waste with Groq when available; otherwise use local rules."""
 
     item = payload.get("item", "")
     supplied_material = payload.get("material", "")
@@ -304,13 +346,47 @@ def analyze_waste(payload: dict) -> dict:
     if not item and not supplied_material:
         raise ValueError("Provide an 'item' or 'material'.")
 
+    # Reliable offline classification and recommendations.
+    material_key = classify_material(item, supplied_material)
+    guide = WASTE_GUIDES.get(material_key, WASTE_GUIDES.get("unknown", {}))
+
+    material_labels = {
+        "plastic": "Plastic",
+        "paper": "Paper",
+        "glass": "Glass",
+        "metal": "Metal",
+        "organic": "Organic waste",
+        "electronic": "Electronic waste",
+        "textile": "Textile",
+        "unknown": "Unknown",
+    }
+
+    fallback_result = {
+        "success": True,
+        "analysis_type": "rules_based",
+        "identified_material": material_labels.get(material_key, "Unknown"),
+        "item": item or supplied_material,
+        "confidence": None,
+        "message": (
+            "Material identified using local rules. "
+            "Check local recycling requirements before disposal."
+        ),
+        "recommendations": {
+            "reuse": guide.get("reuse", []),
+            "recycle": guide.get("recycle", []),
+            "upcycle": guide.get("upcycle", []),
+        },
+        "safety": guide.get("safety", []),
+        "requires_local_verification": True,
+    }
+
+    # Prefer AI when configured. Fall back to rules if it fails.
+    if groq_client is None:
+        return fallback_result
+
     system_prompt = """
-You are EcoLoop AI, an expert in waste classification and circular
-economy guidance.
-
-Analyze the waste item described by the user. Return ONLY valid JSON
-with this structure:
-
+You are EcoLoop AI, an expert in waste classification and circular economy.
+Return ONLY valid JSON with these fields:
 {
   "identified_material": "material name",
   "item": "normalized item description",
@@ -323,36 +399,24 @@ with this structure:
   "safety": ["important precautions"],
   "requires_local_verification": true
 }
-
-Rules:
-- Do not claim to have inspected a photograph.
-- Only use information in the supplied item description and material.
-- If the material is uncertain, say so instead of guessing.
-- Give practical, safe, environmentally responsible suggestions.
-- Never recommend burning plastic or household waste.
-- Never recommend dismantling batteries or hazardous electronics.
-- Explain that local recycling acceptance must be verified.
-- Do not invent recycling facilities, prices, or carbon savings.
-- Keep lists concise.
-- Return valid JSON without Markdown fences.
+Never recommend burning waste or dismantling batteries.
+Never invent recycling facilities, prices, or carbon savings.
+If uncertain, say so. Local recycling rules must be verified.
+Return JSON without Markdown fences.
 """
-
-    user_prompt = (
-        f"Item description: {item or 'Not provided'}\n"
-        f"User-supplied material: {supplied_material or 'Not provided'}"
-    )
 
     try:
         raw_answer = generate_ai_response(
             system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            user_prompt=(
+                f"Item description: {item or 'Not provided'}\n"
+                f"User-supplied material: {supplied_material or 'Not provided'}"
+            ),
             max_tokens=600,
         )
 
-        # Parse the response instead of trusting arbitrary model output.
         result = json.loads(raw_answer)
-
-        required_fields = {
+        required = {
             "identified_material",
             "item",
             "message",
@@ -361,25 +425,23 @@ Rules:
             "requires_local_verification",
         }
 
-        if not isinstance(result, dict) or not required_fields.issubset(result):
+        if not isinstance(result, dict) or not required.issubset(result):
             raise ValueError("Invalid AI response structure.")
 
         recommendations = result["recommendations"]
-
         if not isinstance(recommendations, dict):
             raise ValueError("Invalid recommendations.")
 
         for category in ("reuse", "recycle", "upcycle"):
             values = recommendations.get(category)
-
-            if (
-                not isinstance(values, list)
-                or not all(isinstance(value, str) for value in values)
+            if not isinstance(values, list) or not all(
+                isinstance(value, str) for value in values
             ):
                 raise ValueError("Invalid recommendation list.")
 
-        if not isinstance(result["safety"], list) or not all(
-            isinstance(value, str) for value in result["safety"]
+        safety = result["safety"]
+        if not isinstance(safety, list) or not all(
+            isinstance(value, str) for value in safety
         ):
             raise ValueError("Invalid safety list.")
 
@@ -391,25 +453,19 @@ Rules:
             "confidence": None,
             "message": str(result["message"])[:500],
             "recommendations": {
-                category: values[:5]
-                for category, values in recommendations.items()
-                if category in ("reuse", "recycle", "upcycle")
+                category: recommendations[category][:5]
+                for category in ("reuse", "recycle", "upcycle")
             },
-            "safety": result["safety"][:8],
+            "safety": safety[:8],
             "requires_local_verification": True,
         }
 
-    except Exception:
-        # Do not silently label rule-based output as live AI.
-        return {
-            "success": False,
-            "analysis_type": "groq_llm",
-            "error": "AI analysis unavailable",
-            "message": (
-                "AI analysis is temporarily unavailable. "
-                "Please retry later."
-            ),
-        }
+    except Exception as exc:
+        logging.warning(
+            "Groq waste analysis failed; using rules fallback: %s",
+            type(exc).__name__,
+        )
+        return fallback_result
 
 def analyze_waste_image(payload: dict) -> dict:
     """Analyze an uploaded waste photograph using Groq vision."""
@@ -637,8 +693,12 @@ environmental regulations or professional hazardous-waste advice.
             "model": GROQ_MODEL,
         }
 
-    except Exception:
-        # Do not expose API keys, provider errors or internal details.
+    except Exception as exc:
+        logging.error(
+            "EcoLoop chat failed: %s: %s",
+            type(exc).__name__,
+            str(exc)[:500],
+        )
         return {
             "success": False,
             "assistant": "EcoLoop AI",
