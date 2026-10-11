@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+!.env.*.example
+.aws-sam/
+.venv/
+__pycache__/
+*.pyc
+samconfig.toml
+cloudfront-config.json
+oac-config.json
+sam-health-debug.log
+
+env.local.json

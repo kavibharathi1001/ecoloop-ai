@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Transform: AWS::Serverless-2016-10-31
+
+Description: EcoLoop AI - Environmental Hacks backend
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Timeout: 30
+    MemorySize: 256
+    Architectures:
+      - x86_64
+
+Resources:
+  EcoLoopApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: "$default"
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+
+  EcoLoopActionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "EcoLoopActions-${AWS::StackName}"
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: sessionId
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+        - AttributeName: actionId
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: sessionId
+          KeyType: HASH
+        - AttributeName: createdAt
+          KeyType: RANGE
+
+      GlobalSecondaryIndexes:
+        - IndexName: ActionIdIndex
+          KeySchema:
+            - AttributeName: actionId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  EcoLoopFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: EcoLoopAI-Hackathon-API
+      CodeUri: ../backend/
+      Handler: handler.lambda_handler
+      Description: EcoLoop AI application API
+
+      Environment:
+        Variables:
+          ALLOWED_ORIGIN: "*"
+          ACTIONS_TABLE: !Ref EcoLoopActionsTable
+          DYNAMODB_ENDPOINT: ""
+
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EcoLoopActionsTable
+
+        - DynamoDBReadPolicy:
+            TableName: !Ref EcoLoopActionsTable
+            IndexName: ActionIdIndex
+
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref EcoLoopApi
+            Path: /{proxy+}
+            Method: ANY
+
+        RootEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref EcoLoopApi
+            Path: /
+            Method: ANY
+
+Outputs:
+  EcoLoopApiUrl:
+    Description: Public EcoLoop AI API endpoint
+    Value: !Sub "https://${EcoLoopApi}.execute-api.${AWS::Region}.amazonaws.com"
+
+  EcoLoopHealthUrl:
+    Description: EcoLoop AI health-check endpoint
+    Value: !Sub "https://${EcoLoopApi}.execute-api.${AWS::Region}.amazonaws.com/health"
+
+  EcoLoopActionsTableName:
+    Description: DynamoDB table storing EcoLoop action records
+    Value: !Ref EcoLoopActionsTable
