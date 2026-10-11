@@ -672,7 +672,7 @@ function AIAssistant() {
 
           {loading && (
             <div className="chat-bubble assistant-bubble">
-              Preparing recycling guidance...
+              EcoLoop AI is thinking...
             </div>
           )}
         </div>
@@ -1178,7 +1178,7 @@ function App() {
           {page === "My Impact" && <MyImpact />}
 
           <footer className="page-footer">
-            <span>Â© 2026 EcoLoop AI</span>
+            <span>© 2026 EcoLoop AI</span>
             <span>Designed for a more circular future <Leaf size={13} /></span>
           </footer>
         </div>
