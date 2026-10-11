@@ -1,0 +1,668 @@
+import { useState, type ChangeEvent } from "react";
+import {
+  Activity,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  BarChart3,
+  Bot,
+  CheckCircle2,
+  ChevronRight,
+  CircleHelp,
+  Clock3,
+  Coins,
+  Droplets,
+  Factory,
+  FileImage,
+  Leaf,
+  MessageCircle,
+  Recycle,
+  Search,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Sprout,
+  Upload,
+  Wallet,
+  Zap,
+} from "lucide-react";
+import "./App.css";
+
+type Page =
+  | "Dashboard"
+  | "Scan Waste"
+  | "AI Assistant"
+  | "Recycling Finder"
+  | "My Impact";
+
+const navigation: { label: Page; icon: typeof Leaf }[] = [
+  { label: "Dashboard", icon: BarChart3 },
+  { label: "Scan Waste", icon: FileImage },
+  { label: "AI Assistant", icon: MessageCircle },
+  { label: "Recycling Finder", icon: Recycle },
+  { label: "My Impact", icon: Activity },
+];
+
+const activities = [
+  {
+    icon: Recycle,
+    color: "mint",
+    title: "Plastic bottle",
+    detail: "Recycling · Completed",
+    amount: "0.05 kg",
+    time: "Today",
+  },
+  {
+    icon: Sprout,
+    color: "yellow",
+    title: "Organic kitchen waste",
+    detail: "Composting · Completed",
+    amount: "1.20 kg",
+    time: "Yesterday",
+  },
+  {
+    icon: Zap,
+    color: "purple",
+    title: "Old electronics",
+    detail: "E-waste · Collection pending",
+    amount: "0.80 kg",
+    time: "2 days ago",
+  },
+];
+
+function Dashboard({
+  navigate,
+}: {
+  navigate: (page: Page) => void;
+}) {
+  return (
+    <>
+      <section className="welcome-row">
+        <div>
+          <div className="eyebrow">
+            <Sparkles size={14} /> YOUR CIRCULAR JOURNEY
+          </div>
+          <h1>Make waste matter.</h1>
+          <p className="welcome-description">
+            Every item has another possibility. Discover yours.
+          </p>
+        </div>
+
+        <button className="primary-button" onClick={() => navigate("Scan Waste")}>
+          <Upload size={17} /> Scan your waste
+        </button>
+      </section>
+
+      <section className="hero-card">
+        <div className="hero-content">
+          <span className="hero-pill">
+            <Leaf size={14} /> SMALL ACTIONS. REAL CHANGE.
+          </span>
+          <h2>What if waste was<br />just a new beginning?</h2>
+          <p>
+            Scan an item, discover its next life, and find a better
+            way to reduce what goes to waste.
+          </p>
+          <button
+            className="hero-button"
+            onClick={() => navigate("Scan Waste")}
+          >
+            Discover an item's value <ArrowRight size={16} />
+          </button>
+        </div>
+
+        <div className="hero-art" aria-hidden="true">
+          <div className="art-orbit orbit-one" />
+          <div className="art-orbit orbit-two" />
+          <div className="art-glow" />
+          <div className="art-bottle">
+            <div className="bottle-cap" />
+            <div className="bottle-neck" />
+            <div className="bottle-body">
+              <Leaf size={49} strokeWidth={1.5} />
+            </div>
+          </div>
+          <div className="floating-badge badge-leaf">
+            <Sprout size={21} />
+          </div>
+          <div className="floating-badge badge-recycle">
+            <Recycle size={23} />
+          </div>
+        </div>
+      </section>
+
+      <div className="section-heading">
+        <div>
+          <h2>Your impact overview</h2>
+          <p>Track your progress toward a less wasteful future.</p>
+        </div>
+        <button className="text-button" onClick={() => navigate("My Impact")}>
+          View details <ChevronRight size={16} />
+        </button>
+      </div>
+
+      <section className="stats-grid">
+        <StatCard
+          icon={Recycle}
+          color="mint"
+          label="Waste recovered"
+          value="2.05 kg"
+          change="Illustrative demo data"
+        />
+        <StatCard
+          icon={Coins}
+          color="yellow"
+          label="Potential earnings"
+          value="₹ 24"
+          change="Example estimate only"
+        />
+        <StatCard
+          icon={Sprout}
+          color="purple"
+          label="Actions completed"
+          value="12"
+          change="Illustrative demo data"
+        />
+        <StatCard
+          icon={Droplets}
+          color="blue"
+          label="Resources saved"
+          value="—"
+          change="Not yet measured"
+        />
+      </section>
+
+      <div className="content-grid">
+        <section className="panel activity-panel">
+          <div className="panel-heading">
+            <div>
+              <h3>Recent activity</h3>
+              <p>Example records to preview the experience</p>
+            </div>
+            <button
+              className="icon-button"
+              aria-label="View impact"
+              onClick={() => navigate("My Impact")}
+            >
+              <ArrowUpRight size={19} />
+            </button>
+          </div>
+
+          <div className="activity-list">
+            {activities.map((item) => {
+              const Icon = item.icon;
+
+              return (
+                <div className="activity-item" key={item.title}>
+                  <div className={`activity-icon ${item.color}`}>
+                    <Icon size={20} />
+                  </div>
+                  <div className="activity-copy">
+                    <strong>{item.title}</strong>
+                    <span>{item.detail}</span>
+                  </div>
+                  <div className="activity-amount">
+                    <strong>{item.amount}</strong>
+                    <span>{item.time}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="demo-note">
+            <CircleHelp size={15} />
+            These records are sample data, not verified real-world impact.
+          </div>
+        </section>
+
+        <section className="panel action-panel">
+          <div className="panel-heading">
+            <div>
+              <h3>Explore possibilities</h3>
+              <p>Choose a better next step.</p>
+            </div>
+            <Sparkles size={20} className="green-icon" />
+          </div>
+
+          <ActionCard
+            icon={Bot}
+            title="Ask EcoLoop AI"
+            description="Find practical ways to reuse an item."
+            color="mint"
+            onClick={() => navigate("AI Assistant")}
+          />
+          <ActionCard
+            icon={Recycle}
+            title="Find recycling options"
+            description="Explore responsible disposal routes."
+            color="blue"
+            onClick={() => navigate("Recycling Finder")}
+          />
+          <ActionCard
+            icon={Wallet}
+            title="Discover earning options"
+            description="Learn about potential scrap value."
+            color="yellow"
+            onClick={() => navigate("Recycling Finder")}
+          />
+        </section>
+      </div>
+
+      <section className="bottom-banner">
+        <div className="banner-icon"><Zap size={22} /></div>
+        <div>
+          <strong>Waste can power new possibilities.</strong>
+          <p>Explore reuse, recycling, and responsible waste-to-energy pathways.</p>
+        </div>
+        <button onClick={() => navigate("AI Assistant")}>
+          Explore <ArrowRight size={15} />
+        </button>
+      </section>
+    </>
+  );
+}
+
+function StatCard({
+  icon: Icon,
+  color,
+  label,
+  value,
+  change,
+}: {
+  icon: typeof Leaf;
+  color: string;
+  label: string;
+  value: string;
+  change: string;
+}) {
+  return (
+    <article className="stat-card">
+      <div className="stat-top">
+        <span>{label}</span>
+        <div className={`stat-icon ${color}`}><Icon size={19} /></div>
+      </div>
+      <strong className="stat-value">{value}</strong>
+      <span className="stat-caption">{change}</span>
+    </article>
+  );
+}
+
+function ActionCard({
+  icon: Icon,
+  title,
+  description,
+  color,
+  onClick,
+}: {
+  icon: typeof Leaf;
+  title: string;
+  description: string;
+  color: string;
+  onClick: () => void;
+}) {
+  return (
+    <button className="action-card" onClick={onClick}>
+      <span className={`action-icon ${color}`}><Icon size={20} /></span>
+      <span className="action-copy">
+        <strong>{title}</strong>
+        <span>{description}</span>
+      </span>
+      <ChevronRight size={17} className="action-chevron" />
+    </button>
+  );
+}
+
+function ScanWaste() {
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState("");
+  const [message, setMessage] = useState("");
+
+  function handleFile(event: ChangeEvent<HTMLInputElement>) {
+    const selected = event.target.files?.[0];
+
+    if (!selected) return;
+
+    if (!selected.type.startsWith("image/")) {
+      setMessage("Please select an image file.");
+      return;
+    }
+
+    if (selected.size > 5 * 1024 * 1024) {
+      setMessage("Choose an image smaller than 5 MB.");
+      return;
+    }
+
+    if (preview) URL.revokeObjectURL(preview);
+
+    setFile(selected);
+    setPreview(URL.createObjectURL(selected));
+    setMessage(
+      "Image selected. AI analysis will be enabled after the backend is connected."
+    );
+  }
+
+  return (
+    <section className="feature-page">
+      <div className="eyebrow"><Sparkles size={14} /> WASTE INTELLIGENCE</div>
+      <h1>Give your waste a second chance.</h1>
+      <p className="page-description">
+        Upload an image of an item to prepare it for analysis and discover
+        responsible next steps.
+      </p>
+
+      <div className="panel upload-panel">
+        <label className="upload-zone">
+          {preview ? (
+            <img className="image-preview" src={preview} alt="Selected waste item" />
+          ) : (
+            <>
+              <div className="upload-icon"><Upload size={27} /></div>
+              <strong>Drop an image here or browse files</strong>
+              <span>PNG, JPG or WEBP · Maximum 5 MB</span>
+            </>
+          )}
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleFile} />
+        </label>
+
+        {file && <p className="selected-file">{file.name}</p>}
+        {message && <div className="inline-message">{message}</div>}
+
+        <button
+          className="primary-button full-button"
+          disabled={!file}
+          onClick={() =>
+            setMessage(
+              "Ready for the next step: connect this form to the new AWS API."
+            )
+          }
+        >
+          <Sparkles size={17} /> Prepare waste analysis
+        </button>
+      </div>
+
+      <div className="info-grid">
+        <InfoCard icon={Sprout} title="Reuse first" text="Discover practical ways to extend an item's useful life." />
+        <InfoCard icon={Recycle} title="Recycle responsibly" text="Identify the right disposal route for each material." />
+        <InfoCard icon={ShieldCheck} title="Safety matters" text="Follow material-specific handling and recycling guidance." />
+      </div>
+    </section>
+  );
+}
+
+function InfoCard({
+  icon: Icon,
+  title,
+  text,
+}: {
+  icon: typeof Leaf;
+  title: string;
+  text: string;
+}) {
+  return (
+    <article className="panel info-card">
+      <Icon size={22} className="green-icon" />
+      <strong>{title}</strong>
+      <p>{text}</p>
+    </article>
+  );
+}
+
+function AIAssistant() {
+  const [input, setInput] = useState("");
+  const [sent, setSent] = useState<string[]>([]);
+
+  function sendMessage() {
+    const text = input.trim();
+    if (!text) return;
+
+    setSent((current) => [...current, text]);
+    setInput("");
+  }
+
+  return (
+    <section className="feature-page">
+      <div className="eyebrow"><Sparkles size={14} /> ECOLOOP ASSISTANT</div>
+      <h1>Let's rethink waste.</h1>
+      <p className="page-description">
+        Explore ideas for reuse, recycling, creative projects and responsible
+        waste management.
+      </p>
+
+      <div className="panel chat-panel">
+        <div className="chat-heading">
+          <div className="assistant-avatar"><Bot size={24} /></div>
+          <div>
+            <strong>EcoLoop AI</strong>
+            <span>Waste and circular-economy assistant</span>
+          </div>
+          <span className="demo-status">Preview</span>
+        </div>
+
+        <div className="chat-messages">
+          <div className="chat-bubble assistant-bubble">
+            Vanakkam! 🌱 What kind of waste are you dealing with? Tell me
+            about it, and we can explore ways to reduce, reuse, recycle or
+            transform it into something useful.
+          </div>
+
+          {sent.map((text, index) => (
+            <div className="chat-bubble user-bubble" key={`${text}-${index}`}>
+              {text}
+            </div>
+          ))}
+        </div>
+
+        <div className="suggestion-list">
+          {[
+            "What can I create from plastic bottles?",
+            "How do I recycle old electronics?",
+            "How can kitchen waste become useful?",
+          ].map((suggestion) => (
+            <button key={suggestion} onClick={() => setInput(suggestion)}>
+              {suggestion} <ArrowUpRight size={14} />
+            </button>
+          ))}
+        </div>
+
+        <form
+          className="chat-input-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            sendMessage();
+          }}
+        >
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder="Ask about any waste item..."
+            aria-label="Your question"
+          />
+          <button className="primary-button send-button" type="submit" aria-label="Send message">
+            <Send size={17} />
+          </button>
+        </form>
+        <p className="chat-disclaimer">
+          Interface preview only. AI responses will work after backend integration.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function RecyclingFinder() {
+  return (
+    <section className="feature-page">
+      <div className="eyebrow"><Recycle size={14} /> CIRCULAR ECONOMY</div>
+      <h1>Give materials another life.</h1>
+      <p className="page-description">
+        Learn how different materials can be recovered, reused or recycled.
+      </p>
+
+      <div className="finder-grid">
+        {[
+          { name: "Plastic bottles", type: "PET plastic", icon: Recycle, color: "mint", details: "Check the resin code and local acceptance rules." },
+          { name: "Paper & cardboard", type: "Paper products", icon: FileImage, color: "yellow", details: "Keep recyclable paper dry and free from food contamination." },
+          { name: "Electronic waste", type: "E-waste", icon: Zap, color: "purple", details: "Use authorized e-waste collection and recycling channels." },
+          { name: "Organic waste", type: "Biodegradable", icon: Sprout, color: "blue", details: "Explore suitable composting or local biogas programs." },
+        ].map((item) => {
+          const Icon = item.icon;
+
+          return (
+            <article className="panel material-card" key={item.name}>
+              <div className={`material-icon ${item.color}`}><Icon size={25} /></div>
+              <span className="material-type">{item.type}</span>
+              <h3>{item.name}</h3>
+              <p>{item.details}</p>
+              <span className="listing-note">General guidance · Check locally</span>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="panel notice-panel">
+        <CircleHelp size={21} />
+        <div>
+          <strong>Looking for local recyclers?</strong>
+          <p>
+            Live collection locations and current buying prices will be
+            added after verified recycler data is connected.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MyImpact() {
+  return (
+    <section className="feature-page">
+      <div className="eyebrow"><Activity size={14} /> YOUR IMPACT</div>
+      <h1>Every action counts.</h1>
+      <p className="page-description">
+        Track what you do, what gets recovered, and what still needs attention.
+      </p>
+
+      <div className="panel ledger-panel">
+        <div className="panel-heading">
+          <div>
+            <h3>Recovery ledger</h3>
+            <p>Sample data for interface preview</p>
+          </div>
+          <ShieldCheck size={22} className="green-icon" />
+        </div>
+
+        <div className="ledger-summary">
+          <div><span>Reported</span><strong>2.05 kg</strong></div>
+          <div><span>Verified recovered</span><strong>0.05 kg</strong></div>
+          <div><span>Awaiting collection</span><strong>0.80 kg</strong></div>
+        </div>
+
+        <div className="ledger-note">
+          <CheckCircle2 size={18} />
+          Only verified collection records count toward verified recovery.
+        </div>
+
+        <p className="page-description">
+          These values are illustrative. Actual metrics will be calculated
+          from records stored by the AWS backend.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function App() {
+  const [page, setPage] = useState<Page>("Dashboard");
+  const [search, setSearch] = useState("");
+
+  const activeNav = navigation.find((item) => item.label === page);
+  const ActiveIcon = activeNav?.icon ?? Leaf;
+
+  function navigate(next: Page) {
+    setPage(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <button className="brand" onClick={() => navigate("Dashboard")}>
+          <span className="brand-mark"><Recycle size={25} /></span>
+          <span>
+            <strong>ecoloop<span>ai</span></strong>
+            <small>WASTE LESS. LIVE MORE.</small>
+          </span>
+        </button>
+
+        <div className="nav-label">WORKSPACE</div>
+        <nav className="main-navigation">
+          {navigation.map(({ label, icon: Icon }) => (
+            <button
+              key={label}
+              onClick={() => navigate(label)}
+              className={`nav-item ${page === label ? "active" : ""}`}
+            >
+              <Icon size={19} />
+              <span>{label}</span>
+              {label === "AI Assistant" && <span className="new-badge">AI</span>}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-bottom">
+          <div className="eco-tip">
+            <div className="tip-icon"><Sprout size={19} /></div>
+            <strong>A little greener, every day.</strong>
+            <p>Choose reuse before disposal whenever it's safe and practical.</p>
+          </div>
+
+          <div className="sidebar-footer">
+            <span className="footer-dot" />
+            <span>Hackathon build · Preview</span>
+          </div>
+        </div>
+      </aside>
+
+      <main className="main-area">
+        <header className="topbar">
+          <div className="breadcrumb">
+            <span>EcoLoop AI</span><ChevronRight size={14} />
+            <strong><ActiveIcon size={15} /> {page}</strong>
+          </div>
+
+          <div className="topbar-right">
+            <label className="search-box">
+              <Search size={17} />
+              <input
+                placeholder="Search ideas..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                aria-label="Search ideas"
+              />
+              {search && (
+                <button onClick={() => setSearch("")} aria-label="Clear search">×</button>
+              )}
+            </label>
+            <div className="avatar">E</div>
+          </div>
+        </header>
+
+        <div className="page-content">
+          {page === "Dashboard" && <Dashboard navigate={navigate} />}
+          {page === "Scan Waste" && <ScanWaste />}
+          {page === "AI Assistant" && <AIAssistant />}
+          {page === "Recycling Finder" && <RecyclingFinder />}
+          {page === "My Impact" && <MyImpact />}
+
+          <footer className="page-footer">
+            <span>© 2026 EcoLoop AI</span>
+            <span>Designed for a more circular future <Leaf size={13} /></span>
+          </footer>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default App;
