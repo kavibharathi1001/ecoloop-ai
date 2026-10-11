@@ -1473,4 +1473,104 @@ p {
   font-size: 12px;
   line-height: 1.7;
 }
+
+/* =========================================
+   EcoLoop AI — Markdown Response Styling
+   ========================================= */
+
+.assistant-bubble {
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.assistant-bubble > :first-child {
+  margin-top: 0;
+}
+
+.assistant-bubble > :last-child {
+  margin-bottom: 0;
+}
+
+.assistant-bubble h1,
+.assistant-bubble h2,
+.assistant-bubble h3 {
+  color: #176b45;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 1rem 0 0.6rem;
+}
+
+.assistant-bubble h1 {
+  font-size: 1.4rem;
+}
+
+.assistant-bubble h2 {
+  font-size: 1.2rem;
+}
+
+.assistant-bubble h3 {
+  font-size: 1.05rem;
+}
+
+.assistant-bubble p {
+  margin: 0.65rem 0;
+}
+
+.assistant-bubble ul,
+.assistant-bubble ol {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.assistant-bubble li {
+  margin: 0.4rem 0;
+  padding-left: 0.2rem;
+}
+
+.assistant-bubble li > p {
+  margin: 0.3rem 0;
+}
+
+.assistant-bubble strong {
+  color: #176b45;
+  font-weight: 700;
+}
+
+.assistant-bubble a {
+  color: #167746;
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+.assistant-bubble blockquote {
+  border-left: 3px solid #70b58a;
+  color: #52665a;
+  margin: 1rem 0;
+  padding: 0.25rem 0 0.25rem 1rem;
+}
+
+.assistant-bubble code {
+  background: #edf5ef;
+  border-radius: 5px;
+  font-size: 0.9em;
+  padding: 0.15rem 0.35rem;
+}
+
+.assistant-bubble pre {
+  background: #edf5ef;
+  border-radius: 8px;
+  overflow-x: auto;
+  padding: 1rem;
+}
+
+.assistant-bubble pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.typing-indicator {
+  color: #607768;
+  font-size: 0.9rem;
+}
 }

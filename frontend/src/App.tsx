@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState, type ChangeEvent } from "react";
 import { ecoLoopApi, getSessionId } from "./api";
-
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Activity,
   ArrowRight,
@@ -596,6 +597,8 @@ function AIAssistant() {
     setMessages((current) => [
       ...current,
       { role: "user", text },
+
+      
     ]);
 
     setInput("");
@@ -666,13 +669,21 @@ function AIAssistant() {
               }`}
               key={`${message.role}-${index}`}
             >
-              {message.text}
+              {message.role === "assistant" ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {message.text.replace(/\\([*_`])/g, "$1")}
+                </ReactMarkdown>
+              ) : (
+                message.text
+              )}
             </div>
           ))}
 
           {loading && (
             <div className="chat-bubble assistant-bubble">
-              EcoLoop AI is thinking...
+              <span className="typing-indicator" role="status">
+                EcoLoop AI is thinking...
+              </span>
             </div>
           )}
         </div>
@@ -733,7 +744,6 @@ function AIAssistant() {
     </section>
   );
 }
-
 function RecyclingFinder() {
   type RecyclingCategory = {
     id: string;
@@ -1188,4 +1198,3 @@ function App() {
 }
 
 export default App;
-
