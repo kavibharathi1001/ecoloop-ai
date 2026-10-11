@@ -12,6 +12,7 @@ import base64
 import binascii
 import logging
 
+
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
 # --------------------------------------------------
 # GROQ AI CONFIGURATION
