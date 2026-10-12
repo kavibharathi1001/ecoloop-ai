@@ -12,6 +12,10 @@ import base64
 import binascii
 import logging
 
+import urllib.error
+import urllib.parse
+import urllib.request
+
 
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
 # --------------------------------------------------
@@ -650,6 +654,171 @@ Rules:
 # --------------------------------------------------
 # BASIC WASTE-MANAGEMENT CHAT
 # --------------------------------------------------
+# --------------------------------------------------
+# AI WASTE-TO-ART GENERATION
+# --------------------------------------------------
+
+POLLINATIONS_API_KEY = os.environ.get(
+    "POLLINATIONS_API_KEY", ""
+).strip()
+
+POLLINATIONS_MODEL = "black-forest-labs/flux.1-schnell"
+
+
+def generate_waste_artwork(payload: dict) -> dict:
+    """Generate an upcycling concept image using Pollinations."""
+
+    if not isinstance(payload, dict):
+        raise ValueError("A JSON object is required.")
+
+    item = payload.get("item", "")
+    material = payload.get("material", "unknown")
+    idea = payload.get("idea", "")
+
+    if not isinstance(item, str) or not item.strip():
+        raise ValueError("Describe the waste item first.")
+
+    if not isinstance(material, str):
+        raise ValueError("Material must be text.")
+
+    if not isinstance(idea, str):
+        raise ValueError("The upcycling idea must be text.")
+
+    item = item.strip()[:150]
+    material = material.strip().lower()[:40]
+    idea = idea.strip()[:250]
+
+    if not idea:
+        raise ValueError("An upcycling idea is required.")
+
+    if not POLLINATIONS_API_KEY:
+        raise RuntimeError("Artwork generation is not configured.")
+
+    # Avoid encouraging crafts made from potentially hazardous waste.
+    safety_text = f"{item} {material} {idea}".lower()
+
+    hazardous_terms = (
+        "battery",
+        "lithium cell",
+        "damaged electronics",
+        "medical waste",
+        "chemical waste",
+        "asbestos",
+    )
+
+    if any(term in safety_text for term in hazardous_terms):
+        raise ValueError(
+            "For safety, this item is not eligible for craft generation. "
+            "Follow appropriate specialist disposal guidance."
+        )
+
+    prompt = (
+        "Create a beautiful, imaginative sustainability concept artwork "
+        "showing a clean, ordinary discarded household item transformed "
+        "into a useful or decorative upcycled object. "
+        f"Original item: {item}. "
+        f"Material category: {material}. "
+        f"Creative transformation: {idea}. "
+        "Show one finished object in a professional product-photography "
+        "style, with tasteful natural lighting, a clean studio background, "
+        "rich details, and an inspiring circular-economy aesthetic. "
+        "No text, labels, logos, unsafe materials, or people. "
+        "This is a visual concept, not a safety certification."
+    )
+
+    encoded_prompt = urllib.parse.quote(prompt, safe="")
+    url = (
+        "https://gen.pollinations.ai/image/"
+        f"{encoded_prompt}"
+        "?model="
+        f"{urllib.parse.quote(POLLINATIONS_MODEL, safe='')}"
+        "&width=768&height=768"
+    )
+
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {POLLINATIONS_API_KEY}",
+            "Accept": "image/jpeg,image/png,image/webp",
+            "User-Agent": "EcoLoopAI/1.0",
+        },
+        method="GET",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=24) as result:
+            content_type = (
+                result.headers.get("Content-Type", "")
+                .split(";")[0]
+                .strip()
+                .lower()
+            )
+
+            if content_type not in (
+                "image/jpeg",
+                "image/png",
+                "image/webp",
+            ):
+                raise RuntimeError(
+                    "The image provider returned an unsupported response."
+                )
+
+            image_bytes = result.read(3 * 1024 * 1024 + 1)
+
+            if not image_bytes:
+                raise RuntimeError("The image provider returned no image.")
+
+            if len(image_bytes) > 3 * 1024 * 1024:
+                raise RuntimeError(
+                    "The generated image exceeded the allowed size."
+                )
+
+    except urllib.error.HTTPError as exc:
+        # Do not expose the provider response or secret key to clients.
+        logging.warning(
+            "Pollinations returned HTTP status %s.",
+            exc.code,
+        )
+        raise RuntimeError(
+            "The artwork provider could not complete the request."
+        ) from None
+
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise RuntimeError(
+            "Artwork generation timed out or the provider is unavailable."
+        ) from None
+
+    # Check file signatures instead of trusting Content-Type alone.
+    signatures = {
+        "image/jpeg": lambda data: data.startswith(b"\xff\xd8\xff"),
+        "image/png": lambda data: data.startswith(
+            b"\x89PNG\r\n\x1a\n"
+        ),
+        "image/webp": lambda data: (
+            len(data) >= 12
+            and data.startswith(b"RIFF")
+            and data[8:12] == b"WEBP"
+        ),
+    }
+
+    if not signatures[content_type](image_bytes):
+        raise RuntimeError(
+            "The artwork provider returned invalid image data."
+        )
+
+    image_data = base64.b64encode(image_bytes).decode("ascii")
+
+    return {
+        "success": True,
+        "model": POLLINATIONS_MODEL,
+        "mimeType": content_type,
+        "image": f"data:{content_type};base64,{image_data}",
+        "message": (
+            "AI-generated upcycling concept. "
+            "The image is inspirational, not a verified craft instruction."
+        ),
+    }
+
 
 def answer_chat(message: str) -> dict:
     """Answer environmental questions using a live Groq model."""
@@ -921,7 +1090,39 @@ def lambda_handler(event, context):
                     },
                 )
 
+        if method == "POST" and path == "/api/generate-artwork":
+            payload = parse_body(event)
 
+            try:
+                result = generate_waste_artwork(payload)
+                return response(200, result)
+
+            except ValueError as exc:
+                return response(
+                    400,
+                    {
+                        "success": False,
+                        "error": str(exc),
+                    },
+                )
+
+            except Exception:
+                logging.exception(
+                    "EcoLoop artwork generation failed."
+                )
+
+                return response(
+                    502,
+                    {
+                        "success": False,
+                        "error": (
+                            "Artwork generation is temporarily unavailable. "
+                            "Please try again later."
+                        ),
+                    },
+                )
+
+            
         if method == "POST" and path == "/api/chat":
             payload = parse_body(event)
             message = payload.get("message", "")

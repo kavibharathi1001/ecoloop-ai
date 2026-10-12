@@ -15,7 +15,13 @@ Parameters:
   GroqApiKey:
     Type: String
     NoEcho: true
-    Description: Groq API key for EcoLoop AI
+    Description: Groq API key for EcoLoopAI
+
+  PollinationsApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Pollinations API key for AI artwork generation
 Resources:
   EcoLoopApi:
     Type: AWS::Serverless::HttpApi
@@ -72,6 +78,7 @@ Resources:
         Variables:
           GROQ_API_KEY: !Ref GroqApiKey
           GROQ_MODEL: "openai/gpt-oss-20b"
+          POLLINATIONS_API_KEY: !Ref PollinationsApiKey
           ALLOWED_ORIGIN: "*"
           ACTIONS_TABLE: !Ref EcoLoopActionsTable
           DYNAMODB_ENDPOINT: ""

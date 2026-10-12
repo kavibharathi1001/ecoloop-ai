@@ -91,7 +91,18 @@ export const ecoLoopApi = {
       mimeType,
       description,
     }),
+  generateArtwork: (
+    item: string,
+    material: string,
+    idea: string,
+  ) =>
+    post<ApiResponse>("/api/generate-artwork", {
+      item,
+      material,
+      idea,
+    }),
 
+    
   chat: (message: string) =>
     post<ApiResponse>("/api/chat", { message }),
 

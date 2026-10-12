@@ -321,6 +321,9 @@ function ScanWaste() {
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
+  const [artwork, setArtwork] = useState("");
+  const [artworkLoading, setArtworkLoading] = useState(false);
+  const [artworkMessage, setArtworkMessage] = useState("");
 
   function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files?.[0];
@@ -343,6 +346,8 @@ function ScanWaste() {
     setPreview(URL.createObjectURL(selected));
     setMessage("");
     setResult(null);
+    setArtwork("");
+    setArtworkMessage("");
   }
 
   async function analyzeItem() {
@@ -354,6 +359,8 @@ function ScanWaste() {
     setLoading(true);
     setMessage("");
     setResult(null);
+    setArtwork("");
+    setArtworkMessage("");
 
     try {
       let response: Record<string, unknown>;
@@ -417,6 +424,62 @@ function ScanWaste() {
       setLoading(false);
     }
   }
+  async function generateArtwork() {
+    if (!result || artworkLoading) return;
+
+    const recommendations = result.recommendations as
+      | { upcycle?: unknown }
+      | undefined;
+
+    const firstIdea =
+      Array.isArray(recommendations?.upcycle) &&
+      typeof recommendations.upcycle[0] === "string"
+        ? recommendations.upcycle[0]
+        : "";
+
+    const identifiedItem = String(
+      result.item ?? item.trim() ?? "household waste",
+    );
+
+    const identifiedMaterial = String(
+      result.identified_material ?? result.material ?? material,
+    );
+
+    if (!firstIdea) {
+      setArtworkMessage(
+        "No upcycling suggestion is available. Analyze the item again first.",
+      );
+      return;
+    }
+
+    setArtworkLoading(true);
+    setArtworkMessage("");
+    setArtwork("");
+
+    try {
+      const response = await ecoLoopApi.generateArtwork(
+        identifiedItem,
+        identifiedMaterial,
+        firstIdea,
+      );
+
+      if (typeof response.image !== "string") {
+        throw new Error("The artwork response did not contain an image.");
+      }
+
+      setArtwork(response.image);
+    } catch (error) {
+      setArtworkMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to generate artwork. Please try again.",
+      );
+    } finally {
+      setArtworkLoading(false);
+    }
+  }
+
+
 
   return (
     <section className="feature-page">
@@ -533,6 +596,62 @@ function ScanWaste() {
             AI-generated recommendations are estimates. Verify material
             identification and local recycling rules before disposal.
           </p>
+          <div className="artwork-generator">
+            <div>
+              <h3>Give this waste a creative second life</h3>
+              <p>
+                Turn the suggested upcycling idea into an AI-generated
+                visual concept.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="primary-button full-button"
+              disabled={artworkLoading}
+              onClick={() => void generateArtwork()}
+            >
+              <Sparkles size={17} />
+              {artworkLoading
+                ? "Creating your artwork..."
+                : "Generate Upcycled Artwork"}
+            </button>
+
+            {artworkLoading && (
+              <p role="status">
+                Generating your concept. This may take several seconds.
+              </p>
+            )}
+
+            {artworkMessage && (
+              <div className="inline-message" role="alert">
+                {artworkMessage}
+              </div>
+            )}
+
+            {artwork && (
+              <div className="artwork-result">
+                <img
+                  className="artwork-image"
+                  src={artwork}
+                  alt="AI-generated concept for transforming waste into art"
+                />
+
+                <a
+                  className="primary-button artwork-download"
+                  href={artwork}
+                  download="ecoloop-upcycled-artwork.png"
+                >
+                  Download artwork
+                </a>
+
+                <p>
+                  AI-generated inspiration. Confirm material safety and
+                  construction methods before making the object.
+                </p>
+              </div>
+            )}
+          </div>
         </section>
       )}
 
